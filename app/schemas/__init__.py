@@ -1,4 +1,5 @@
 """スキーマパッケージ。"""
+
 from app.schemas.maintenance_record import (
     MaintenanceRecordCreate,
     MaintenanceRecordRead,

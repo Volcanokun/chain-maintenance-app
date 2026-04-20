@@ -1,4 +1,5 @@
 """motorcycles APIエンドポイント。"""
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -38,9 +39,7 @@ def create(data: MotorcycleCreate, db: Session = Depends(get_db)):
 
 
 @router.patch("/{motorcycle_id}", response_model=MotorcycleRead)
-def update(
-    motorcycle_id: int, data: MotorcycleUpdate, db: Session = Depends(get_db)
-):
+def update(motorcycle_id: int, data: MotorcycleUpdate, db: Session = Depends(get_db)):
     """バイク情報を部分更新。"""
     obj = get_motorcycle(db, motorcycle_id)
     if obj is None:

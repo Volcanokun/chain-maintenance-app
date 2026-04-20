@@ -1,4 +1,5 @@
 """DB接続エンジンとセッション管理。"""
+
 from collections.abc import Generator
 
 from sqlalchemy import create_engine

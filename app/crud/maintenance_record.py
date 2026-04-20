@@ -1,4 +1,5 @@
 """maintenance_records CRUD操作。"""
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,9 +15,7 @@ def get_record(db: Session, record_id: int) -> MaintenanceRecord | None:
     return db.get(MaintenanceRecord, record_id)
 
 
-def get_records_by_motorcycle(
-    db: Session, motorcycle_id: int
-) -> list[MaintenanceRecord]:
+def get_records_by_motorcycle(db: Session, motorcycle_id: int) -> list[MaintenanceRecord]:
     """指定バイクのメンテ記録を実施日降順で取得。"""
     stmt = (
         select(MaintenanceRecord)
@@ -26,9 +25,7 @@ def get_records_by_motorcycle(
     return list(db.scalars(stmt).all())
 
 
-def get_latest_record(
-    db: Session, motorcycle_id: int
-) -> MaintenanceRecord | None:
+def get_latest_record(db: Session, motorcycle_id: int) -> MaintenanceRecord | None:
     """指定バイクの最新メンテ記録を取得。"""
     stmt = (
         select(MaintenanceRecord)
@@ -39,9 +36,7 @@ def get_latest_record(
     return db.scalars(stmt).first()
 
 
-def create_record(
-    db: Session, data: MaintenanceRecordCreate
-) -> MaintenanceRecord:
+def create_record(db: Session, data: MaintenanceRecordCreate) -> MaintenanceRecord:
     """メンテ記録を新規登録。"""
     obj = MaintenanceRecord(**data.model_dump())
     db.add(obj)

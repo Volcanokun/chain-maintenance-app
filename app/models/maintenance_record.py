@@ -1,7 +1,18 @@
 """maintenance_recordsテーブルのモデル定義。"""
+
 from datetime import date, datetime
 
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -31,7 +42,7 @@ class MaintenanceRecord(Base):
         server_default=func.now(),
     )
 
-    motorcycle: Mapped["Motorcycle"] = relationship(back_populates="maintenance_records")
+    motorcycle: Mapped["Motorcycle"] = relationship(back_populates="maintenance_records")  # noqa: F821
 
     __table_args__ = (
         CheckConstraint("odometer_km >= 0", name="ck_maintenance_records_odometer_nonneg"),

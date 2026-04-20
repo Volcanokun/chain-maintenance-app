@@ -1,4 +1,5 @@
 """motorcycles CRUD操作。"""
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -26,9 +27,7 @@ def create_motorcycle(db: Session, data: MotorcycleCreate) -> Motorcycle:
     return obj
 
 
-def update_motorcycle(
-    db: Session, motorcycle: Motorcycle, data: MotorcycleUpdate
-) -> Motorcycle:
+def update_motorcycle(db: Session, motorcycle: Motorcycle, data: MotorcycleUpdate) -> Motorcycle:
     """バイク情報を部分更新。"""
     update_data = data.model_dump(exclude_unset=True)
     for key, value in update_data.items():

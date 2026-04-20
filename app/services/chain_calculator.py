@@ -2,6 +2,7 @@
 
 DB非依存。純粋な計算のみ。
 """
+
 from dataclasses import dataclass
 
 

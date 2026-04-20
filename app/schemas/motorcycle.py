@@ -1,4 +1,5 @@
 """motorcycles APIの入出力スキーマ。"""
+
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field

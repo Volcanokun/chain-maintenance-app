@@ -1,4 +1,5 @@
 """maintenance_records APIの入出力スキーマ。"""
+
 from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field

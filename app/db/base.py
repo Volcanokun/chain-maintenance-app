@@ -1,4 +1,5 @@
 """SQLAlchemyの宣言ベース。全モデルの共通親クラス。"""
+
 from sqlalchemy.orm import DeclarativeBase
 
 

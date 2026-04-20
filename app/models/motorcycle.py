@@ -1,4 +1,5 @@
 """motorcyclesテーブルのモデル定義。"""
+
 from datetime import datetime
 
 from sqlalchemy import CheckConstraint, DateTime, Integer, String, func
@@ -36,7 +37,7 @@ class Motorcycle(Base):
 
     # N:1の逆方向リレーション定義。
     # maintenance_records側からのアクセスと双方向になる。
-    maintenance_records: Mapped[list["MaintenanceRecord"]] = relationship(
+    maintenance_records: Mapped[list["MaintenanceRecord"]] = relationship(  # noqa: F821
         back_populates="motorcycle",
         cascade="all, delete-orphan",
     )
@@ -46,5 +47,7 @@ class Motorcycle(Base):
         CheckConstraint("front_sprocket > 0", name="ck_motorcycles_front_sprocket_positive"),
         CheckConstraint("rear_sprocket > 0", name="ck_motorcycles_rear_sprocket_positive"),
         CheckConstraint("chain_links > 0", name="ck_motorcycles_chain_links_positive"),
-        CheckConstraint("tire_circumference_mm > 0", name="ck_motorcycles_tire_circumference_positive"),
+        CheckConstraint(
+            "tire_circumference_mm > 0", name="ck_motorcycles_tire_circumference_positive"
+        ),
     )
