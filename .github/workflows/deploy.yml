@@ -185,7 +185,7 @@ jobs:
   # ────────────────────────────────────────────────────────────
   deploy:
     name: Deploy & Health Check
-    needs: migrate
+    needs: [build, migrate]
     runs-on: ubuntu-latest
 
     steps:
