@@ -155,7 +155,7 @@ jobs:
             --task-definition "$TASK_DEF_ARN" \
             --launch-type FARGATE \
             --network-configuration "$NETWORK_CONFIG" \
-            --overrides '{"containerOverrides":[{"name":"app","command":["alembic","upgrade","head"]}]}' \
+            --overrides '{"containerOverrides":[{"name":"app","command":["python","-m","alembic","upgrade","head"]}]}' \
             --query 'tasks[0].taskArn' \
             --output text)
 
