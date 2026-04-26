@@ -1,0 +1,216 @@
+name: Deploy to ECS
+
+on:
+  push:
+    branches: [main]
+
+env:
+  AWS_REGION: ap-northeast-1
+  ECR_REPOSITORY: chain-maintenance-app
+  ECS_CLUSTER: chain-maintenance-prod-cluster
+  ECS_SERVICE: chain-maintenance-prod-service
+  TASK_FAMILY: chain-maintenance-prod-app
+  CONTAINER_NAME: app
+
+# 同時デプロイを防止（新しい run はキューイング）
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  id-token: write  # OIDC トークン取得に必要
+  contents: read   # リポジトリ checkout に必要
+
+jobs:
+  # ────────────────────────────────────────────────────────────
+  # 1. Lint & Test
+  # ────────────────────────────────────────────────────────────
+  lint-test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv sync --frozen --dev
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Test (pytest)
+        run: uv run pytest tests/ -v
+
+  # ────────────────────────────────────────────────────────────
+  # 2. Docker Build → ECR Push → 新タスク定義を登録
+  # ECR は IMMUTABLE タグのため sha タグのみ使用。
+  # 既存タスク定義の JSON を取得してイメージだけ差し替え、新リビジョンを登録する。
+  # ────────────────────────────────────────────────────────────
+  build:
+    name: Build, Push & Register Task Definition
+    needs: lint-test
+    runs-on: ubuntu-latest
+
+    outputs:
+      task-def-arn: ${{ steps.register.outputs.task-def-arn }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            --tag $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            --push \
+            .
+
+      - name: Register new task definition with updated image
+        id: register
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          NEW_IMAGE="$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+          # 現在のタスク定義を取得し、イメージだけ差し替えて一時ファイルに保存
+          aws ecs describe-task-definition \
+            --task-definition "$TASK_FAMILY" \
+            --query 'taskDefinition' \
+            --output json \
+          | jq --arg IMAGE "$NEW_IMAGE" '
+              .containerDefinitions[0].image = $IMAGE
+              | del(
+                  .taskDefinitionArn, .revision, .status,
+                  .requiresAttributes, .placementConstraints,
+                  .compatibilities, .registeredAt, .registeredBy
+                )
+            ' > /tmp/new-task-def.json
+
+          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/new-task-def.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          echo "Registered: $NEW_TASK_DEF_ARN"
+          echo "task-def-arn=$NEW_TASK_DEF_ARN" >> $GITHUB_OUTPUT
+
+  # ────────────────────────────────────────────────────────────
+  # 3. Alembic Migration
+  # 新タスク定義（新イメージ）を使って migration 専用タスクを起動。
+  # 完了後に終了コードを確認し、失敗なら pipeline を止める。
+  # Deploy より先に実行し「新コードが古いスキーマを叩く」を防ぐ。
+  # ────────────────────────────────────────────────────────────
+  migrate:
+    name: Alembic Migration
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run Alembic migration via ECS Run Task
+        run: |
+          TASK_DEF_ARN="${{ needs.build.outputs.task-def-arn }}"
+
+          # ECS サービスのネットワーク設定を再利用（サブネット/SG を secrets に持たせない）
+          NETWORK_CONFIG=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query 'services[0].networkConfiguration' \
+            --output json)
+
+          echo "Task definition : $TASK_DEF_ARN"
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$ECS_CLUSTER" \
+            --task-definition "$TASK_DEF_ARN" \
+            --launch-type FARGATE \
+            --network-configuration "$NETWORK_CONFIG" \
+            --overrides '{"containerOverrides":[{"name":"app","command":["alembic","upgrade","head"]}]}' \
+            --query 'tasks[0].taskArn' \
+            --output text)
+
+          echo "Migration task ARN: $TASK_ARN"
+
+          # タスク停止まで待機（デフォルト最大 10 分）
+          aws ecs wait tasks-stopped \
+            --cluster "$ECS_CLUSTER" \
+            --tasks "$TASK_ARN"
+
+          # 終了コードを確認してパイプラインを止める
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "$ECS_CLUSTER" \
+            --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' \
+            --output text)
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "::error::Migration failed (exit code: $EXIT_CODE)"
+            exit 1
+          fi
+
+          echo "Migration completed successfully"
+
+  # ────────────────────────────────────────────────────────────
+  # 4. ECS サービス更新 & ヘルスチェック待機
+  # ────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy & Health Check
+    needs: migrate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update ECS service with new task definition
+        run: |
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service  "$ECS_SERVICE" \
+            --task-definition "${{ needs.build.outputs.task-def-arn }}" \
+            --force-new-deployment \
+            --query 'service.serviceName' \
+            --output text
+          echo "Triggered deployment for: $ECS_SERVICE"
+
+      - name: Wait for service to stabilize (health check)
+        run: |
+          echo "Waiting for ECS service to stabilize..."
+          # ALB ヘルスチェックが通り全タスクが RUNNING になるまで最大 10 分待機
+          aws ecs wait services-stable \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE"
+          echo "Deployment complete and healthy!"
