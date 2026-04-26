@@ -1,5 +1,12 @@
 # アーキテクチャ設計 - Chain Maintenance App
 
+## フェーズ進捗
+
+| フェーズ | 内容 | 状態 |
+|---|---|---|
+| Phase 1 | FastAPI アプリ実装・ローカル動作確認 | ✅ 完了 |
+| Phase 2 | AWSインフラ構築・CI/CD・本番デプロイ | ✅ 完了 |
+
 ## 全体構成図
                      ┌─────────────────────┐
                      │   ユーザーブラウザ   │
@@ -187,8 +194,60 @@ Outbound: なし
 | Aurora停止(ACU 0状態からの起動) | 初回リクエスト遅延 | アプリ側でリトライ実装、30秒タイムアウト |
 | ALBヘルスチェック失敗 | タスク入れ替え | `/health`エンドポイント実装で対応 |
 
+## インフラ構成ファイル（Phase 2 追加）
+
+```
+infra/
+├── main.tf              # AWS / random プロバイダー設定
+├── variables.tf         # 変数定義（リージョン・CIDR・AZ等）
+├── terraform.tfvars     # 変数値（git管理外）
+├── outputs.tf           # 出力値（ALB DNS名・ECR URL・IAMロールARN等）
+├── vpc.tf               # VPC / サブネット / SG / VPC Endpoint
+├── ecr.tf               # ECR リポジトリ（IMMUTABLE・ライフサイクルポリシー）
+├── aurora.tf            # Aurora Serverless v2 + Secrets Manager
+├── alb.tf               # ALB + ターゲットグループ + HTTP リスナー
+├── ecs.tf               # ECS Fargate + IAM ロール + Auto Scaling
+└── github_actions.tf    # OIDC プロバイダー + GitHub Actions IAM ロール
+```
+
+## CI/CDパイプライン詳細（Phase 2 実装済み）
+
+```
+.github/workflows/deploy.yml
+```
+
+| ジョブ | 処理 |
+|---|---|
+| `lint-test` | ruff check / pytest |
+| `build` | docker buildx (linux/amd64) → ECR push (shaタグ) → 新タスク定義を登録 |
+| `migrate` | ECS Run Task で `python -m alembic upgrade head` を実行・完了を待機 |
+| `deploy` | ECS force-new-deployment → services-stable 待機 |
+
+**重要な実装メモ:**
+- ECR は `IMMUTABLE` タグのため `sha` タグのみ使用（`latest` 上書き不可）
+- Alembicは `python -m alembic` で実行（multi-stage buildでシバンパスが変わるため）
+- `deploy` ジョブの `needs` に `build` と `migrate` の両方が必要（出力参照のため）
+- DB接続は `DB_HOST` 等の個別 env vars → `config.py` の `model_validator` で PostgreSQL URL を組み立て
+
+## DB接続設定（Phase 2 実装済み）
+
+ECS が Secrets Manager から以下を個別注入:
+```
+DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASSWORD
+```
+
+`app/core/config.py` の `model_validator` が PostgreSQL URL に変換:
+```
+postgresql+psycopg2://user:pass@host:5432/dbname?sslmode=require
+```
+
+ローカル開発時は `DB_HOST` 未設定 → SQLite (`sqlite:///./dev.db`) にフォールバック。
+
 ## 制約事項・既知の課題
 
 - **単一リージョン構成**: ap-northeast-1のみ、DR考慮なし(学習スコープ外)
 - **バックアップ**: Aurora自動バックアップ(1日保持)のみ
 - **WAF**: 未導入、パブリックURL露出リスクあり(学習終了後はALBを停止して対応)
+- **HTTPS未対応**: 現在HTTP(80)のみ。Route53/ACM追加で対応可能
+- **VPC Endpointコスト**: Interface型4本×2AZ≒$81/月。NAT Gateway($33/月)より高いため、長期運用時は再検討
+- **tfstate管理**: 現在ローカル管理。チーム開発時はS3バックエンドに移行する（main.tfにコメントアウト済み）
