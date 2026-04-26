@@ -1,6 +1,7 @@
 resource "aws_ecr_repository" "app" {
   name                 = "chain-maintenance-app"
   image_tag_mutability = "IMMUTABLE"
+  force_delete         = true # terraform destroy 時にイメージが残っていても強制削除
 
   image_scanning_configuration {
     scan_on_push = true
