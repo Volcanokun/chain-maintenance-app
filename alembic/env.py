@@ -12,7 +12,7 @@ from alembic import context
 # アプリ側のモジュール読み込み
 from app.core.config import settings
 from app.db.base import Base
-from app.models import MaintenanceRecord, Motorcycle  # noqa: F401  モデル登録のため必要
+from app.models import BikeMaster  # noqa: F401  モデル登録のため必要
 
 # Alembic設定オブジェクト
 config = context.config

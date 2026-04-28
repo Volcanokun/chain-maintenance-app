@@ -1,72 +1,50 @@
-"""チェーンメンテナンス計算ロジック。
+"""チェーン計算ロジック。DB 非依存。"""
 
-DB非依存。純粋な計算のみ。
-"""
-
+import math
+import re
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class ChainCalcResult:
-    """計算結果を格納する値オブジェクト。"""
-
     wheel_rotations_per_chain_loop: float
     chain_distance_per_loop_m: float
-    distance_since_last_km: int | None
+    tire_circumference_mm: int
 
 
-def calc_wheel_rotations(chain_links: int, rear_sprocket: int) -> float:
-    """チェーン1周あたりのホイール回転数を算出。
+def tire_size_to_circumference_mm(tire_size: str) -> int:
+    """タイヤサイズ文字列（例: '180/55ZR17'）から円周(mm)を算出する。
 
-    式: ホイール回転数 = チェーンコマ数 / (リアスプロケ丁数 × 2)
-    リアスプロケ1回転でチェーンが「丁数×2コマ」進む原理。
+    計算式: π × (リム径mm + サイドウォール高さ × 2)
+    サイドウォール高さ = 幅mm × 偏平率 / 100
     """
-    return chain_links / (rear_sprocket * 2)
-
-
-def calc_chain_distance_per_loop(
-    chain_links: int,
-    rear_sprocket: int,
-    tire_circumference_mm: int,
-) -> float:
-    """チェーン1周あたりの走行距離(メートル)を算出。
-
-    ホイール回転数 × タイヤ円周 = 1ループあたりの走行距離。
-    """
-    rotations = calc_wheel_rotations(chain_links, rear_sprocket)
-    return rotations * tire_circumference_mm / 1000  # mm → m
+    m = re.match(r"(\d+)/(\d+)[A-Z]*R?(\d+)", tire_size.strip())
+    if not m:
+        raise ValueError(f"タイヤサイズの形式が不正です: {tire_size!r}")
+    width_mm = int(m.group(1))
+    aspect = int(m.group(2))
+    rim_inch = int(m.group(3))
+    sidewall_mm = width_mm * aspect / 100
+    diameter_mm = rim_inch * 25.4 + sidewall_mm * 2
+    return round(math.pi * diameter_mm)
 
 
 def calculate_chain_stats(
     chain_links: int,
     rear_sprocket: int,
-    tire_circumference_mm: int,
-    current_odometer_km: int | None = None,
-    last_maintenance_odometer_km: int | None = None,
+    rear_tire_size: str,
 ) -> ChainCalcResult:
-    """チェーンメンテナンス統計を一括計算。
+    """チェーン計算を行う。
 
-    Args:
-        chain_links: チェーンコマ数
-        rear_sprocket: リアスプロケ丁数
-        tire_circumference_mm: リアタイヤ円周(mm)
-        current_odometer_km: 現在走行距離(任意)
-        last_maintenance_odometer_km: 前回メンテ時の走行距離(任意)
-
-    Returns:
-        ChainCalcResult: 計算結果
+    タイヤ回転数/チェーン1周 = コマ数 ÷ リアスプロケ丁数
+      根拠: スプロケ1回転でチェーンが丁数コマ進む。
+            チェーン1周(コマ数コマ)には コマ数÷丁数 回転必要。
     """
-    rotations = calc_wheel_rotations(chain_links, rear_sprocket)
-    distance_per_loop = calc_chain_distance_per_loop(
-        chain_links, rear_sprocket, tire_circumference_mm
-    )
-
-    distance_since_last: int | None = None
-    if current_odometer_km is not None and last_maintenance_odometer_km is not None:
-        distance_since_last = current_odometer_km - last_maintenance_odometer_km
-
+    circumference_mm = tire_size_to_circumference_mm(rear_tire_size)
+    rotations = chain_links / rear_sprocket
+    distance_m = rotations * circumference_mm / 1000
     return ChainCalcResult(
-        wheel_rotations_per_chain_loop=round(rotations, 4),
-        chain_distance_per_loop_m=round(distance_per_loop, 2),
-        distance_since_last_km=distance_since_last,
+        wheel_rotations_per_chain_loop=round(rotations, 2),
+        chain_distance_per_loop_m=round(distance_m, 1),
+        tire_circumference_mm=circumference_mm,
     )
