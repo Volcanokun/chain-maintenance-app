@@ -3,197 +3,151 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chain Maintenance App</title>
+  <title>Chain Stats — バイクチェーン計算</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
 <body class="bg-gray-100 min-h-screen">
 
-  <header class="bg-gray-800 text-white px-6 py-4 flex items-center gap-6">
-    <h1 class="text-xl font-bold">🔗 Chain Maintenance App</h1>
-    <nav class="flex gap-4 text-sm">
-      <span class="text-white font-semibold border-b-2 border-white pb-0.5">バイク管理</span>
-      <a href="/records" class="text-gray-300 hover:text-white">メンテ記録</a>
-    </nav>
+  <header class="bg-gray-800 text-white px-6 py-4">
+    <h1 class="text-xl font-bold">🔗 Chain Stats</h1>
+    <p class="text-gray-400 text-sm mt-0.5">メーカー・排気量・車種を選んでチェーンの回転数を確認</p>
   </header>
 
-  <main class="max-w-5xl mx-auto p-6 space-y-8" x-data="motorcycleApp()">
+  <main class="max-w-2xl mx-auto p-6 space-y-6" x-data="chainApp()">
 
-    <!-- 登録フォーム -->
+    <!-- Step 1: メーカー選択 -->
     <section class="bg-white rounded-xl shadow p-6">
-      <h2 class="text-lg font-bold mb-4 text-gray-700">バイクを登録</h2>
-      <form @submit.prevent="create" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div class="sm:col-span-2">
-          <label class="block text-sm font-medium text-gray-600 mb-1">バイク名 <span class="text-red-500">*</span></label>
-          <input x-model="form.name" type="text" placeholder="例: MT-09 SP"
-            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-600 mb-1">フロントスプロケ（丁）<span class="text-red-500">*</span></label>
-          <input x-model.number="form.front_sprocket" type="number" min="1" placeholder="例: 16"
-            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-600 mb-1">リアスプロケ（丁）<span class="text-red-500">*</span></label>
-          <input x-model.number="form.rear_sprocket" type="number" min="1" placeholder="例: 45"
-            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-600 mb-1">チェーンコマ数 <span class="text-red-500">*</span></label>
-          <input x-model.number="form.chain_links" type="number" min="1" placeholder="例: 118"
-            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-600 mb-1">タイヤ円周（mm）<span class="text-red-500">*</span></label>
-          <input x-model.number="form.tire_circumference_mm" type="number" min="1" placeholder="例: 1992"
-            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400">
-        </div>
-        <div class="sm:col-span-2 flex items-center gap-3">
-          <button type="submit"
-            class="bg-gray-800 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-gray-700 transition disabled:opacity-50"
-            :disabled="saving">
-            <span x-show="!saving">登録する</span>
-            <span x-show="saving">登録中…</span>
-          </button>
-          <span x-show="createError" x-text="createError" class="text-red-500 text-sm"></span>
-        </div>
-      </form>
+      <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Step 1 — メーカー</h2>
+      <select x-model="selectedMake" @change="onMakeChange"
+        class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400">
+        <option value="">— メーカーを選んでください —</option>
+        <template x-for="make in makes" :key="make">
+          <option :value="make" x-text="make"></option>
+        </template>
+      </select>
     </section>
 
-    <!-- バイク一覧 -->
-    <section>
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="text-lg font-bold text-gray-700">登録済みバイク</h2>
-        <button @click="load" class="text-sm text-gray-500 hover:text-gray-700">↻ 更新</button>
-      </div>
-
-      <div x-show="loading" class="text-center text-gray-400 py-10">読み込み中…</div>
-
-      <div x-show="!loading && motorcycles.length === 0" class="text-center text-gray-400 py-10">
-        バイクが登録されていません
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <template x-for="m in motorcycles" :key="m.id">
-          <div class="bg-white rounded-xl shadow p-5 flex flex-col gap-3">
-
-            <!-- バイク名・スプロケ情報 -->
-            <div class="flex items-start justify-between">
-              <div>
-                <p class="font-bold text-gray-800" x-text="m.name"></p>
-                <p class="text-xs text-gray-400 mt-0.5"
-                  x-text="`F${m.front_sprocket}T / R${m.rear_sprocket}T / ${m.chain_links}コマ / ${m.tire_circumference_mm}mm`">
-                </p>
-              </div>
-              <button @click="remove(m.id)"
-                class="text-gray-300 hover:text-red-400 text-lg leading-none transition"
-                title="削除">✕</button>
-            </div>
-
-            <!-- チェーンステータス -->
-            <div class="bg-gray-50 rounded-lg px-4 py-3 text-sm space-y-1">
-              <template x-if="m.stats">
-                <div>
-                  <div class="flex justify-between text-gray-600">
-                    <span>チェーン1周の走行距離</span>
-                    <span class="font-medium" x-text="`${m.stats.chain_distance_per_loop_m} m`"></span>
-                  </div>
-                  <div class="flex justify-between text-gray-600">
-                    <span>ホイール回転数 / チェーン1周</span>
-                    <span class="font-medium" x-text="m.stats.wheel_rotations_per_chain_loop"></span>
-                  </div>
-                  <div x-show="m.stats.distance_since_last_km !== null"
-                    class="flex justify-between font-semibold mt-1"
-                    :class="m.stats.distance_since_last_km >= 500 ? 'text-red-500' : 'text-green-600'">
-                    <span>前回メンテからの走行距離</span>
-                    <span x-text="`${m.stats.distance_since_last_km} km`"></span>
-                  </div>
-                  <div x-show="m.stats.distance_since_last_km === null" class="text-gray-400 mt-1">
-                    メンテ記録がありません
-                  </div>
-                </div>
-              </template>
-              <template x-if="!m.stats">
-                <span class="text-gray-300">計算中…</span>
-              </template>
-            </div>
-
-            <!-- メンテ記録リンク -->
-            <a :href="`/records?id=${m.id}`"
-              class="text-center text-sm text-gray-500 border border-gray-200 rounded-lg py-1.5 hover:bg-gray-50 transition">
-              メンテ記録を見る →
-            </a>
-
-          </div>
+    <!-- Step 2: 排気量選択 -->
+    <section class="bg-white rounded-xl shadow p-6" x-show="selectedMake">
+      <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Step 2 — 排気量</h2>
+      <div class="flex flex-wrap gap-2">
+        <template x-for="cc in displacements" :key="cc">
+          <button
+            @click="onDisplacementChange(cc)"
+            :class="selectedCc === cc
+              ? 'bg-gray-800 text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+            class="px-3 py-1.5 rounded-lg text-sm font-medium transition">
+            <span x-text="`${cc} cc`"></span>
+          </button>
         </template>
       </div>
+    </section>
+
+    <!-- Step 3: 車種選択 -->
+    <section class="bg-white rounded-xl shadow p-6" x-show="selectedCc">
+      <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Step 3 — 車種</h2>
+      <select x-model="selectedBikeId" @change="onBikeChange"
+        class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400">
+        <option value="">— 車種を選んでください —</option>
+        <template x-for="bike in bikes" :key="bike.id">
+          <option :value="bike.id" x-text="bike.model_name"></option>
+        </template>
+      </select>
+    </section>
+
+    <!-- 計算結果 -->
+    <section class="bg-white rounded-xl shadow p-6 space-y-4" x-show="stats">
+
+      <!-- 車種サマリー -->
+      <div>
+        <p class="text-lg font-bold text-gray-800" x-text="stats && stats.bike.model_name"></p>
+        <p class="text-xs text-gray-400 mt-0.5"
+          x-text="stats && `F${stats.bike.front_sprocket}T / R${stats.bike.rear_sprocket}T / ${stats.bike.chain_links}コマ / チェーン${stats.bike.chain_pitch || '-'} / リアタイヤ ${stats.bike.rear_tire_size}`">
+        </p>
+      </div>
+
+      <hr class="border-gray-100">
+
+      <!-- メイン指標 -->
+      <div class="bg-gray-50 rounded-xl p-5 text-center">
+        <p class="text-sm text-gray-500 mb-1">チェーン1周あたりのタイヤ回転数</p>
+        <p class="text-5xl font-bold text-gray-800" x-text="stats && stats.wheel_rotations_per_chain_loop">
+        </p>
+        <p class="text-sm text-gray-400 mt-1">回転</p>
+      </div>
+
+      <!-- サブ指標 -->
+      <div class="grid grid-cols-2 gap-3">
+        <div class="bg-gray-50 rounded-xl p-4 text-center">
+          <p class="text-xs text-gray-500 mb-1">チェーン1周の走行距離</p>
+          <p class="text-2xl font-bold text-gray-700" x-text="stats && `${stats.chain_distance_per_loop_m} m`"></p>
+        </div>
+        <div class="bg-gray-50 rounded-xl p-4 text-center">
+          <p class="text-xs text-gray-500 mb-1">タイヤ円周（計算値）</p>
+          <p class="text-2xl font-bold text-gray-700" x-text="stats && `${stats.tire_circumference_mm} mm`"></p>
+        </div>
+      </div>
+
+      <!-- 計算式の説明 -->
+      <details class="text-xs text-gray-400 cursor-pointer">
+        <summary class="hover:text-gray-600">計算式を見る</summary>
+        <div class="mt-2 space-y-1 pl-2">
+          <p>タイヤ回転数 = チェーンコマ数 ÷ リアスプロケ丁数</p>
+          <p x-text="stats && `= ${stats.bike.chain_links} ÷ ${stats.bike.rear_sprocket} = ${stats.wheel_rotations_per_chain_loop}`"></p>
+          <p class="mt-1">タイヤ円周 = π × (リム径mm + サイドウォール高さ × 2)</p>
+          <p>走行距離 = タイヤ回転数 × タイヤ円周</p>
+        </div>
+      </details>
+
     </section>
 
   </main>
 
   <script>
-    function motorcycleApp() {
+    function chainApp() {
       return {
-        motorcycles: [],
-        loading: true,
-        saving: false,
-        createError: '',
-        form: { name: '', front_sprocket: null, rear_sprocket: null, chain_links: null, tire_circumference_mm: null },
+        makes: [],
+        displacements: [],
+        bikes: [],
+        stats: null,
+        selectedMake: '',
+        selectedCc: null,
+        selectedBikeId: '',
 
         async init() {
-          await this.load();
+          const res = await fetch('/makes');
+          this.makes = await res.json();
         },
 
-        async load() {
-          this.loading = true;
-          try {
-            const res = await fetch('/motorcycles');
-            const list = await res.json();
-            this.motorcycles = list.map(m => ({ ...m, stats: null }));
-            list.forEach(m => this.loadStats(m.id));
-          } finally {
-            this.loading = false;
-          }
+        async onMakeChange() {
+          this.displacements = [];
+          this.bikes = [];
+          this.stats = null;
+          this.selectedCc = null;
+          this.selectedBikeId = '';
+          if (!this.selectedMake) return;
+          const res = await fetch(`/displacements?make=${encodeURIComponent(this.selectedMake)}`);
+          this.displacements = await res.json();
         },
 
-        async loadStats(id) {
-          try {
-            const res = await fetch(`/motorcycles/${id}/chain-stats`);
-            if (!res.ok) return;
-            const stats = await res.json();
-            const m = this.motorcycles.find(m => m.id === id);
-            if (m) m.stats = stats;
-          } catch {}
+        async onDisplacementChange(cc) {
+          this.selectedCc = cc;
+          this.bikes = [];
+          this.stats = null;
+          this.selectedBikeId = '';
+          const res = await fetch(
+            `/bikes?make=${encodeURIComponent(this.selectedMake)}&displacement_cc=${cc}`
+          );
+          this.bikes = await res.json();
         },
 
-        async create() {
-          this.createError = '';
-          const { name, front_sprocket, rear_sprocket, chain_links, tire_circumference_mm } = this.form;
-          if (!name || !front_sprocket || !rear_sprocket || !chain_links || !tire_circumference_mm) {
-            this.createError = 'すべての項目を入力してください';
-            return;
-          }
-          this.saving = true;
-          try {
-            const res = await fetch('/motorcycles', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ name, front_sprocket, rear_sprocket, chain_links, tire_circumference_mm }),
-            });
-            if (!res.ok) { this.createError = '登録に失敗しました'; return; }
-            this.form = { name: '', front_sprocket: null, rear_sprocket: null, chain_links: null, tire_circumference_mm: null };
-            await this.load();
-          } catch {
-            this.createError = '通信エラーが発生しました';
-          } finally {
-            this.saving = false;
-          }
-        },
-
-        async remove(id) {
-          if (!confirm('このバイクを削除しますか？関連するメンテ記録も削除されます。')) return;
-          await fetch(`/motorcycles/${id}`, { method: 'DELETE' });
-          await this.load();
+        async onBikeChange() {
+          this.stats = null;
+          if (!this.selectedBikeId) return;
+          const res = await fetch(`/bikes/${this.selectedBikeId}/stats`);
+          if (res.ok) this.stats = await res.json();
         },
       };
     }
