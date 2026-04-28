@@ -4,8 +4,7 @@ resource "aws_lb_target_group" "app" {
   port        = 8000
   protocol    = "HTTP"
   vpc_id      = aws_vpc.main.id
-  target_type = "ip" # Fargate は ip モード必須
-
+  target_type = "ip"
   health_check {
     enabled             = true
     path                = "/health"

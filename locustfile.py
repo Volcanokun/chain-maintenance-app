@@ -26,14 +26,19 @@ from datetime import date, timedelta
 
 from locust import HttpUser, between, task
 
-
 _MOTORCYCLE_PRESETS = [
-    {"name": "MT-09 SP",     "front_sprocket": 16, "rear_sprocket": 45, "chain_links": 118, "tire_circumference_mm": 1992},
-    {"name": "CBR600RR",     "front_sprocket": 15, "rear_sprocket": 40, "chain_links": 112, "tire_circumference_mm": 1880},
-    {"name": "Z900RS",       "front_sprocket": 15, "rear_sprocket": 41, "chain_links": 116, "tire_circumference_mm": 1960},
-    {"name": "S1000RR",      "front_sprocket": 17, "rear_sprocket": 44, "chain_links": 118, "tire_circumference_mm": 1972},
-    {"name": "Ninja ZX-6R",  "front_sprocket": 15, "rear_sprocket": 42, "chain_links": 112, "tire_circumference_mm": 1875},
-    {"name": "GSX-R750",     "front_sprocket": 17, "rear_sprocket": 43, "chain_links": 114, "tire_circumference_mm": 1895},
+    {"name": "MT-09 SP", "front_sprocket": 16, "rear_sprocket": 45,
+     "chain_links": 118, "tire_circumference_mm": 1992},
+    {"name": "CBR600RR", "front_sprocket": 15, "rear_sprocket": 40,
+     "chain_links": 112, "tire_circumference_mm": 1880},
+    {"name": "Z900RS", "front_sprocket": 15, "rear_sprocket": 41,
+     "chain_links": 116, "tire_circumference_mm": 1960},
+    {"name": "S1000RR", "front_sprocket": 17, "rear_sprocket": 44,
+     "chain_links": 118, "tire_circumference_mm": 1972},
+    {"name": "Ninja ZX-6R", "front_sprocket": 15, "rear_sprocket": 42,
+     "chain_links": 112, "tire_circumference_mm": 1875},
+    {"name": "GSX-R750", "front_sprocket": 17, "rear_sprocket": 43,
+     "chain_links": 114, "tire_circumference_mm": 1895},
 ]
 
 _LUBRICANTS = ["WAKO'S CHL", "MOTUL C3", "DID ルブリカント", "YAMAHA Chain Lube", None]
