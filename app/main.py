@@ -19,9 +19,6 @@ app.include_router(bikes.router)
 _STATIC = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=_STATIC), name="static")
 
-_STATIC = Path(__file__).parent / "static"
-app.mount("/static", StaticFiles(directory=_STATIC), name="static")
-
 
 @app.get("/health")
 def health_check():
