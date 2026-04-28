@@ -10,6 +10,10 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.0"
     }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 4.0"
+    }
   }
 
   # S3バックエンドを使う場合はコメントアウトを解除して値を設定する
@@ -32,4 +36,8 @@ provider "aws" {
       ManagedBy   = "terraform"
     }
   }
+}
+
+provider "cloudflare" {
+  api_token = var.cloudflare_api_token
 }
