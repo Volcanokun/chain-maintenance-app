@@ -3,16 +3,48 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chain Stats — バイクチェーン計算</title>
+  <title>チェーンメンテ計算 — バイクのチェーン清掃・給油に</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
 <body class="bg-gray-100 min-h-screen">
 
-  <header class="bg-gray-800 text-white px-6 py-4">
-    <h1 class="text-xl font-bold">🔗 Chain Stats</h1>
-    <p class="text-gray-400 text-sm mt-0.5">メーカー・排気量・車種を選んでチェーンの回転数を確認</p>
+  <header class="bg-gray-800 text-white px-6 py-5">
+    <h1 class="text-xl font-bold">🔗 チェーンメンテ計算</h1>
+    <p class="text-gray-400 text-sm mt-0.5">チェーン清掃・給油のとき「あと何回タイヤを回せばいいか」がすぐわかる</p>
   </header>
+
+  <!-- 使い方ガイド -->
+  <div class="max-w-2xl mx-auto px-6 pt-6">
+    <details class="bg-blue-50 border border-blue-200 rounded-xl">
+      <summary class="px-5 py-4 cursor-pointer font-semibold text-blue-800 text-sm flex items-center gap-2">
+        <span>📖</span> このアプリの使い方
+      </summary>
+      <div class="px-5 pb-5 text-sm text-blue-900 space-y-4">
+
+        <div>
+          <p class="font-semibold mb-1">🎯 何のためのアプリ？</p>
+          <p class="text-blue-800">チェーンの清掃やチェーンルブの塗布をするとき、<strong>後輪を何回転させればチェーン1周分が終わるか</strong>をすぐ調べられます。「どこまで掃除したかわからなくなった」「二度塗りや塗り忘れが怖い」を防ぎます。</p>
+        </div>
+
+        <div>
+          <p class="font-semibold mb-2">🔧 手順</p>
+          <ol class="space-y-1.5 list-none">
+            <li class="flex gap-2"><span class="font-bold text-blue-600 shrink-0">①</span>バイクをメンテナンススタンドで後輪を浮かせる</li>
+            <li class="flex gap-2"><span class="font-bold text-blue-600 shrink-0">②</span>マスターリンク（チェーンのつなぎ目）など目印になるコマを作業開始位置に持ってくる</li>
+            <li class="flex gap-2"><span class="font-bold text-blue-600 shrink-0">③</span>下のフォームで車種を選ぶ →「後輪の回転数」を確認する</li>
+            <li class="flex gap-2"><span class="font-bold text-blue-600 shrink-0">④</span>後輪をその回転数だけ回しながら清掃・給油する</li>
+            <li class="flex gap-2"><span class="font-bold text-blue-600 shrink-0">⑤</span>目印のコマが戻ってきたらチェーン1周完了</li>
+          </ol>
+        </div>
+
+        <div class="bg-blue-100 rounded-lg p-3 text-xs text-blue-700">
+          💡 回転数は目安です。目印のコマが戻ってきたことを必ず目視で確認してください。
+        </div>
+
+      </div>
+    </details>
+  </div>
 
   <main class="max-w-2xl mx-auto p-6 space-y-6" x-data="chainApp()">
 
@@ -28,31 +60,34 @@
       </select>
     </section>
 
-    <!-- Step 2: 排気量選択 -->
+    <!-- Step 2: 排気量カテゴリ選択 -->
     <section class="bg-white rounded-xl shadow p-6" x-show="selectedMake">
       <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Step 2 — 排気量</h2>
       <div class="flex flex-wrap gap-2">
-        <template x-for="cc in displacements" :key="cc">
+        <template x-for="range in ccRanges" :key="range.label">
           <button
-            @click="onDisplacementChange(cc)"
-            :class="selectedCc === cc
+            @click="onRangeChange(range)"
+            :class="selectedRange && selectedRange.label === range.label
               ? 'bg-gray-800 text-white'
               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
-            class="px-3 py-1.5 rounded-lg text-sm font-medium transition">
-            <span x-text="`${cc} cc`"></span>
+            class="px-3 py-1.5 rounded-lg text-sm font-medium transition"
+            x-text="range.label">
           </button>
         </template>
       </div>
     </section>
 
     <!-- Step 3: 車種選択 -->
-    <section class="bg-white rounded-xl shadow p-6" x-show="selectedCc">
+    <section class="bg-white rounded-xl shadow p-6" x-show="selectedRange">
       <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Step 3 — 車種</h2>
-      <select x-model="selectedBikeId" @change="onBikeChange"
+      <div x-show="bikes.length === 0 && selectedRange" class="text-sm text-gray-400">
+        このカテゴリの車種データはありません
+      </div>
+      <select x-model="selectedBikeId" @change="onBikeChange" x-show="bikes.length > 0"
         class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400">
         <option value="">— 車種を選んでください —</option>
         <template x-for="bike in bikes" :key="bike.id">
-          <option :value="bike.id" x-text="bike.model_name"></option>
+          <option :value="bike.id" x-text="bike.model_name + (bike.displacement_cc ? ` (${bike.displacement_cc}cc)` : '')"></option>
         </template>
       </select>
     </section>
@@ -64,18 +99,18 @@
       <div>
         <p class="text-lg font-bold text-gray-800" x-text="stats && stats.bike.model_name"></p>
         <p class="text-xs text-gray-400 mt-0.5"
-          x-text="stats && `F${stats.bike.front_sprocket}T / R${stats.bike.rear_sprocket}T / ${stats.bike.chain_links}コマ / チェーン${stats.bike.chain_pitch || '-'} / リアタイヤ ${stats.bike.rear_tire_size}`">
+          x-text="stats && `${stats.bike.maker} / ${stats.bike.displacement_cc ? stats.bike.displacement_cc + 'cc / ' : ''}F${stats.bike.front_sprocket}T / R${stats.bike.rear_sprocket}T / ${stats.bike.chain_links}コマ / チェーン${stats.bike.chain_pitch || '-'} / リアタイヤ ${stats.bike.rear_tire_size}`">
         </p>
       </div>
 
       <hr class="border-gray-100">
 
       <!-- メイン指標 -->
-      <div class="bg-gray-50 rounded-xl p-5 text-center">
-        <p class="text-sm text-gray-500 mb-1">チェーン1周あたりのタイヤ回転数</p>
-        <p class="text-5xl font-bold text-gray-800" x-text="stats && stats.wheel_rotations_per_chain_loop">
-        </p>
-        <p class="text-sm text-gray-400 mt-1">回転</p>
+      <div class="bg-amber-50 border border-amber-200 rounded-xl p-5 text-center">
+        <p class="text-sm font-semibold text-amber-700 mb-1">後輪の回転数（チェーン1周）</p>
+        <p class="text-6xl font-bold text-gray-800" x-text="stats && stats.wheel_rotations_per_chain_loop"></p>
+        <p class="text-sm text-amber-600 mt-1 font-medium">回転</p>
+        <p class="text-xs text-gray-400 mt-3">後輪をこの回数だけ回すと、チェーンがちょうど1周します</p>
       </div>
 
       <!-- サブ指標 -->
@@ -94,10 +129,10 @@
       <details class="text-xs text-gray-400 cursor-pointer">
         <summary class="hover:text-gray-600">計算式を見る</summary>
         <div class="mt-2 space-y-1 pl-2">
-          <p>タイヤ回転数 = チェーンコマ数 ÷ リアスプロケ丁数</p>
+          <p>後輪回転数 = チェーンコマ数 ÷ リアスプロケ丁数</p>
           <p x-text="stats && `= ${stats.bike.chain_links} ÷ ${stats.bike.rear_sprocket} = ${stats.wheel_rotations_per_chain_loop}`"></p>
           <p class="mt-1">タイヤ円周 = π × (リム径mm + サイドウォール高さ × 2)</p>
-          <p>走行距離 = タイヤ回転数 × タイヤ円周</p>
+          <p>走行距離 = 後輪回転数 × タイヤ円周</p>
         </div>
       </details>
 
@@ -106,14 +141,24 @@
   </main>
 
   <script>
+    const CC_RANGES = [
+      { label: '〜50cc',       min: null, max: 50   },
+      { label: '51〜125cc',    min: 51,   max: 125  },
+      { label: '126〜250cc',   min: 126,  max: 250  },
+      { label: '251〜400cc',   min: 251,  max: 400  },
+      { label: '401〜750cc',   min: 401,  max: 750  },
+      { label: '751〜1000cc',  min: 751,  max: 1000 },
+      { label: '1001cc〜',     min: 1001, max: null  },
+    ];
+
     function chainApp() {
       return {
         makes: [],
-        displacements: [],
+        ccRanges: CC_RANGES,
         bikes: [],
         stats: null,
         selectedMake: '',
-        selectedCc: null,
+        selectedRange: null,
         selectedBikeId: '',
 
         async init() {
@@ -122,24 +167,24 @@
         },
 
         async onMakeChange() {
-          this.displacements = [];
           this.bikes = [];
           this.stats = null;
-          this.selectedCc = null;
+          this.selectedRange = null;
           this.selectedBikeId = '';
-          if (!this.selectedMake) return;
-          const res = await fetch(`/displacements?make=${encodeURIComponent(this.selectedMake)}`);
-          this.displacements = await res.json();
         },
 
-        async onDisplacementChange(cc) {
-          this.selectedCc = cc;
+        async onRangeChange(range) {
+          this.selectedRange = range;
           this.bikes = [];
           this.stats = null;
           this.selectedBikeId = '';
-          const res = await fetch(
-            `/bikes?make=${encodeURIComponent(this.selectedMake)}&displacement_cc=${cc}`
-          );
+          if (!this.selectedMake) return;
+
+          const params = new URLSearchParams({ make: this.selectedMake });
+          if (range.min !== null) params.set('displacement_min', range.min);
+          if (range.max !== null) params.set('displacement_max', range.max);
+
+          const res = await fetch(`/bikes?${params}`);
           this.bikes = await res.json();
         },
 

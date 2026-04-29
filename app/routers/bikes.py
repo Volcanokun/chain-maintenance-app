@@ -31,13 +31,23 @@ def list_displacements(make: str, db: Session = Depends(get_db)):
 
 
 @router.get("/bikes", response_model=list[BikeMasterRead])
-def list_bikes(make: str, displacement_cc: int, db: Session = Depends(get_db)):
-    """メーカー＋排気量で絞り込んだ車種一覧（モデル名昇順）。"""
-    rows = db.execute(
-        select(BikeMaster)
-        .where(BikeMaster.maker == make, BikeMaster.displacement_cc == displacement_cc)
-        .order_by(BikeMaster.model_name)
-    ).scalars()
+def list_bikes(
+    make: str,
+    displacement_cc: int | None = None,
+    displacement_min: int | None = None,
+    displacement_max: int | None = None,
+    db: Session = Depends(get_db),
+):
+    """メーカー＋排気量条件で絞り込んだ車種一覧（モデル名昇順）。"""
+    query = select(BikeMaster).where(BikeMaster.maker == make)
+    if displacement_cc is not None:
+        query = query.where(BikeMaster.displacement_cc == displacement_cc)
+    else:
+        if displacement_min is not None:
+            query = query.where(BikeMaster.displacement_cc >= displacement_min)
+        if displacement_max is not None:
+            query = query.where(BikeMaster.displacement_cc <= displacement_max)
+    rows = db.execute(query.order_by(BikeMaster.model_name)).scalars()
     return list(rows)
 
 
