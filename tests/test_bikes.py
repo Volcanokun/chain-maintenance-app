@@ -96,6 +96,41 @@ class TestBikes:
         assert res.status_code == 200
         assert res.json() == []
 
+    def test_range_filter_min_only(self, client, db_session):
+        _seed(db_session, model_name="CBR250RR", displacement_cc=249)
+        bike = _seed(db_session, model_name="CB400SF", displacement_cc=400)
+        res = client.get("/bikes?make=ホンダ&displacement_min=251")
+        assert res.status_code == 200
+        data = res.json()
+        assert len(data) == 1
+        assert data[0]["id"] == bike.id
+
+    def test_range_filter_max_only(self, client, db_session):
+        bike = _seed(db_session, model_name="CBR250RR", displacement_cc=249)
+        _seed(db_session, model_name="CB400SF", displacement_cc=400)
+        res = client.get("/bikes?make=ホンダ&displacement_max=250")
+        assert res.status_code == 200
+        data = res.json()
+        assert len(data) == 1
+        assert data[0]["id"] == bike.id
+
+    def test_range_filter_min_and_max(self, client, db_session):
+        _seed(db_session, model_name="CBR125R", displacement_cc=125)
+        bike250 = _seed(db_session, model_name="CBR250RR", displacement_cc=249)
+        _seed(db_session, model_name="CB400SF", displacement_cc=400)
+        res = client.get("/bikes?make=ホンダ&displacement_min=126&displacement_max=250")
+        assert res.status_code == 200
+        data = res.json()
+        assert len(data) == 1
+        assert data[0]["id"] == bike250.id
+
+    def test_range_filter_no_params_returns_all_for_maker(self, client, db_session):
+        _seed(db_session, model_name="CBR250RR", displacement_cc=249)
+        _seed(db_session, model_name="CB400SF", displacement_cc=400)
+        res = client.get("/bikes?make=ホンダ")
+        assert res.status_code == 200
+        assert len(res.json()) == 2
+
 
 class TestBikeStats:
     def test_stats_calculation(self, client, db_session):
