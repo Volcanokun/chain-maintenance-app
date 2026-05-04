@@ -1,9 +1,14 @@
-"""バイクブロスからメーカー単位でスペックをスクレイピングしてDBに投入する。
+"""バイクブロスからメーカー単位でスペックをスクレイピングしてDBまたはCSVに投入する。
 
 使い方:
+    # 単一メーカーをDBに投入
     uv run python scripts/scrape_maker.py --maker ヤマハ
+
+    # 全メーカーを並列スクレイピング → CSV出力（DB接続不要）
+    uv run python scripts/scrape_maker.py --all-makers --csv data/bike_masters.csv
+
+    # ドライラン確認
     uv run python scripts/scrape_maker.py --maker スズキ --dry-run
-    uv run python scripts/scrape_maker.py --maker カワサキ --range 4  # 251-400ccのみ
 
 排気量カテゴリ（バイクブロスの v パラメータ）:
     1=50cc以下  2=51-125cc  3=126-250cc  4=251-400cc
@@ -11,17 +16,15 @@
 """
 
 import argparse
+import csv
 import re
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 import httpx
 from bs4 import BeautifulSoup
-from sqlalchemy.orm import Session
-
-sys.path.insert(0, ".")
-from app.db.session import SessionLocal
-from app.models.bike_master import BikeMaster
 
 BASE_URL = "https://www.bikebros.co.jp"
 REQUEST_DELAY = 0.5
@@ -41,7 +44,11 @@ MAKER_ID_MAP: dict[str, int] = {
     "KTM": 33,
 }
 
-CC_RANGES_ALL = list(range(1, 9))  # 1〜8
+CSV_FIELDS = [
+    "maker", "model_name", "displacement_cc",
+    "front_sprocket", "rear_sprocket", "chain_links",
+    "chain_pitch", "rear_tire_size",
+]
 
 
 def get(url: str, client: httpx.Client) -> BeautifulSoup:
@@ -52,7 +59,6 @@ def get(url: str, client: httpx.Client) -> BeautifulSoup:
 
 
 def fetch_model_group_urls(maker_id: int, v: int, client: httpx.Client) -> list[str]:
-    """排気量カテゴリページからモデルグループURLを取得する。"""
     url = f"{BASE_URL}/catalog/{maker_id}/?v={v}"
     soup = get(url, client)
     pattern = re.compile(rf"^/catalog/{maker_id}/\d+_\d+/$")
@@ -67,7 +73,6 @@ def fetch_model_group_urls(maker_id: int, v: int, client: httpx.Client) -> list[
 
 
 def fetch_variant_urls(model_group_url: str, maker_id: int, client: httpx.Client) -> list[str]:
-    """モデルグループページから年式バリアントURLを取得する。"""
     soup = get(model_group_url, client)
     pattern = re.compile(rf"^/catalog/{maker_id}/\d+_\d+/(\d+)/")
     seen: set[str] = set()
@@ -85,7 +90,6 @@ def fetch_variant_urls(model_group_url: str, maker_id: int, client: httpx.Client
 def fetch_variant_spec(
     variant_url: str, maker_name: str, client: httpx.Client
 ) -> dict | None:
-    """バリアントページからチェーン関連スペックを取得する。"""
     soup = get(variant_url, client)
 
     spec: dict[str, str] = {}
@@ -95,7 +99,6 @@ def fetch_variant_spec(
         if th and td:
             spec[th.get_text(strip=True)] = td.get_text(strip=True)
 
-    # チェーン駆動のバイクのみ対象
     if spec.get("動力伝達方式", "") != "チェーン":
         return None
 
@@ -164,58 +167,106 @@ def scrape_maker(maker_name: str, ranges: list[int]) -> list[dict]:
 
                 print(f"{group_bikes} 件")
 
+    print(f"[{maker_name}] 完了: {len(all_bikes)} 件", flush=True)
     return all_bikes
 
 
-def upsert_bikes(bikes: list[dict], db: Session) -> tuple[int, int]:
+def scrape_all_makers_parallel(ranges: list[int], max_workers: int) -> list[dict]:
+    """全メーカーを ThreadPoolExecutor で並列スクレイピングする。"""
+    all_bikes: list[dict] = []
+
+    # Java の ExecutorService.submit() → Future と同じ感覚
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(scrape_maker, maker, ranges): maker
+            for maker in MAKER_ID_MAP
+        }
+        # as_completed は Java の Future.get() を順不同で受け取るイメージ
+        for future in as_completed(futures):
+            maker = futures[future]
+            try:
+                bikes = future.result()
+                all_bikes.extend(bikes)
+            except Exception as e:
+                print(f"[{maker}] エラー: {e}", flush=True)
+
+    return all_bikes
+
+
+def write_csv(bikes: list[dict], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
+        writer.writeheader()
+        writer.writerows(bikes)
+    print(f"CSV出力完了: {path} ({len(bikes)} 件)")
+
+
+def upsert_bikes(bikes: list[dict]) -> tuple[int, int]:
+    sys.path.insert(0, ".")
+    from sqlalchemy.orm import Session
+
+    from app.db.session import SessionLocal
+    from app.models.bike_master import BikeMaster
+
     added, updated = 0, 0
-    for data in bikes:
-        existing = (
-            db.query(BikeMaster)
-            .filter_by(maker=data["maker"], model_name=data["model_name"])
-            .first()
-        )
-        if existing:
-            for k, v in data.items():
-                setattr(existing, k, v)
-            updated += 1
-        else:
-            db.add(BikeMaster(**data))
-            added += 1
-    db.commit()
+    db: Session = SessionLocal()
+    try:
+        for data in bikes:
+            existing = (
+                db.query(BikeMaster)
+                .filter_by(maker=data["maker"], model_name=data["model_name"])
+                .first()
+            )
+            if existing:
+                for k, v in data.items():
+                    setattr(existing, k, v)
+                updated += 1
+            else:
+                db.add(BikeMaster(**data))
+                added += 1
+        db.commit()
+    finally:
+        db.close()
     return added, updated
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="バイクブロスからメーカー単位でスクレイピング")
-    parser.add_argument(
-        "--maker", required=True,
-        help=f"メーカー名。対応: {list(MAKER_ID_MAP.keys())}"
-    )
-    parser.add_argument(
-        "--range", dest="range_v", type=int, default=None,
-        help="排気量カテゴリのみ取得 (1-8)。省略時は全カテゴリ"
-    )
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--maker", help=f"メーカー名。対応: {list(MAKER_ID_MAP.keys())}")
+    group.add_argument("--all-makers", action="store_true", help="全メーカーを並列スクレイピング")
+
+    parser.add_argument("--range", dest="range_v", type=int, default=None,
+                        help="排気量カテゴリのみ取得 (1-8)。省略時は全カテゴリ")
+    parser.add_argument("--csv", metavar="PATH", help="DB投入の代わりにCSVファイルへ出力")
+    parser.add_argument("--workers", type=int, default=4,
+                        help="並列スレッド数（--all-makers 時のみ有効、デフォルト: 4）")
     parser.add_argument("--dry-run", action="store_true", help="DBに書き込まず結果を表示のみ")
     args = parser.parse_args()
 
     ranges = [args.range_v] if args.range_v else CC_RANGES_DEFAULT
 
-    bikes = scrape_maker(args.maker, ranges)
+    if args.all_makers:
+        print(f"全メーカー並列スクレイピング開始 (workers={args.workers})")
+        bikes = scrape_all_makers_parallel(ranges, max_workers=args.workers)
+    else:
+        bikes = scrape_maker(args.maker, ranges)
+
     print(f"\n合計 {len(bikes)} 件取得")
 
     if args.dry_run:
-        print("--dry-run: DBへの書き込みをスキップ")
+        print("--dry-run: 書き込みをスキップ")
         for b in bikes[:10]:
             print(" ", b)
         return
 
-    db = SessionLocal()
-    try:
-        added, updated = upsert_bikes(bikes, db)
-        print(f"DB投入完了: {added} 件追加, {updated} 件更新")
-    finally:
-        db.close()
+    if args.csv:
+        write_csv(bikes, Path(args.csv))
+        return
+
+    added, updated = upsert_bikes(bikes)
+    print(f"DB投入完了: {added} 件追加, {updated} 件更新")
 
 
 if __name__ == "__main__":

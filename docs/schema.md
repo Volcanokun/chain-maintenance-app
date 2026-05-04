@@ -1,88 +1,98 @@
-# DBスキーマ設計 - Chain Maintenance App
+# DBスキーマ設計 - Bike Specs Lookup App
 
 ## 設計方針
 
-- **シンプルさ優先**: 2テーブル構成、正規化は第3正規形まで
-- **過剰設計を避ける**: キャッシュテーブル、ログテーブルは作らない
-- **将来拡張性**: マルチバイク対応は最初から許容(motorcycle_idで紐付け)
+- **シンプルさ優先**: 1テーブル構成（バイクスペックマスタのみ）
+- **読み取り専用**: アプリからの書き込みなし。データ更新はスクレイパー + CSVマイグレーション経由
+- **インデックス最小化**: 検索対象（maker / displacement_cc）のみに絞る
 
-## ER図(テキスト表記)
-┌─────────────────────┐      ┌──────────────────────────┐
-│  motorcycles        │      │  maintenance_records     │
-├─────────────────────┤      ├──────────────────────────┤
-│ id (PK)             │◄─────│ id (PK)                  │
-│ name                │  1:N │ motorcycle_id (FK)       │
-│ front_sprocket      │      │ performed_at             │
-│ rear_sprocket       │      │ odometer_km              │
-│ chain_links         │      │ lubricant                │
-│ tire_circumference  │      │ notes                    │
-│ created_at          │      │ created_at               │
-│ updated_at          │      └──────────────────────────┘
-└─────────────────────┘
+> **変更履歴**: Phase 1 では `motorcycles` / `maintenance_records` の2テーブル構成だったが、
+> Phase 3-B のピボットで `bike_masters` 1テーブルに全面移行した（Alembicマイグレーション `a1b2c3d4e5f6`）。
+
+## ER図
+
+```
+┌──────────────────────────────────────────┐
+│  bike_masters                            │
+├──────────────────────────────────────────┤
+│ id              INTEGER  PK              │
+│ maker           VARCHAR(100)  NOT NULL   │
+│ model_name      VARCHAR(200)  NOT NULL   │
+│ displacement_cc INTEGER  NULL            │
+│ front_sprocket  INTEGER  NOT NULL        │
+│ rear_sprocket   INTEGER  NOT NULL        │
+│ chain_links     INTEGER  NOT NULL        │
+│ chain_pitch     VARCHAR(10)  NULL        │
+│ rear_tire_size  VARCHAR(30)  NOT NULL    │
+└──────────────────────────────────────────┘
+```
 
 ## テーブル定義
 
-### motorcycles
+### bike_masters
 
-バイク情報を保持する。自分所有の1台を想定するが、構造上は複数対応可能。
-
-| カラム | 型 | 制約 | 説明 |
-|---|---|---|---|
-| id | SERIAL | PRIMARY KEY | 自動採番 |
-| name | VARCHAR(100) | NOT NULL | 車種名(例: "MT-09 SP") |
-| front_sprocket | INT | NOT NULL, CHECK (front_sprocket > 0) | 前スプロケ丁数 |
-| rear_sprocket | INT | NOT NULL, CHECK (rear_sprocket > 0) | 後スプロケ丁数 |
-| chain_links | INT | NOT NULL, CHECK (chain_links > 0) | チェーンコマ数 |
-| tire_circumference_mm | INT | NOT NULL, CHECK (tire_circumference_mm > 0) | リアタイヤ円周(mm) |
-| created_at | TIMESTAMP WITH TIME ZONE | NOT NULL DEFAULT NOW() | 作成日時 |
-| updated_at | TIMESTAMP WITH TIME ZONE | NOT NULL DEFAULT NOW() | 更新日時 |
-
-### maintenance_records
-
-メンテナンス実施記録。motorcyclesに対してN:1。
+バイクのチェーン関連スペックを保持するマスタテーブル。
+バイクブロスからスクレイピングした情報を格納する。
 
 | カラム | 型 | 制約 | 説明 |
 |---|---|---|---|
-| id | SERIAL | PRIMARY KEY | 自動採番 |
-| motorcycle_id | INT | NOT NULL, FOREIGN KEY REFERENCES motorcycles(id) ON DELETE CASCADE | バイクID |
-| performed_at | DATE | NOT NULL | メンテ実施日 |
-| odometer_km | INT | NOT NULL, CHECK (odometer_km >= 0) | メンテ時点の走行距離(km) |
-| lubricant | VARCHAR(100) | NULL可 | 使用ルブ銘柄 |
-| notes | TEXT | NULL可 | 自由記述メモ |
-| created_at | TIMESTAMP WITH TIME ZONE | NOT NULL DEFAULT NOW() | 作成日時 |
+| id | INTEGER | PRIMARY KEY | 自動採番 |
+| maker | VARCHAR(100) | NOT NULL | メーカー名（例: "ヤマハ"） |
+| model_name | VARCHAR(200) | NOT NULL | 車種名・グレード名（例: "MT-09 SP"） |
+| displacement_cc | INTEGER | NULL可 | 排気量（cc）。不明な場合はNULL |
+| front_sprocket | INTEGER | NOT NULL | 前スプロケット歯数 |
+| rear_sprocket | INTEGER | NOT NULL | 後スプロケット歯数 |
+| chain_links | INTEGER | NOT NULL | 標準チェーンコマ数 |
+| chain_pitch | VARCHAR(10) | NULL可 | チェーンサイズ（例: "525", "520"） |
+| rear_tire_size | VARCHAR(30) | NOT NULL | リアタイヤサイズ（例: "180/55ZR17"） |
 
-## インデックス戦略
+## インデックス
 
 ```sql
--- メンテ履歴の時系列取得を高速化
-CREATE INDEX idx_maintenance_records_motorcycle_performed
-    ON maintenance_records(motorcycle_id, performed_at DESC);
+CREATE INDEX ix_bike_masters_maker ON bike_masters(maker);
+CREATE INDEX ix_bike_masters_displacement_cc ON bike_masters(displacement_cc);
 ```
 
-**判断根拠**: 履歴一覧の主要クエリは「特定バイクの最新メンテから降順」。
-このクエリが頻発する想定のため複合インデックスを張る。
-motorcyclesは数件しか入らない前提なので追加インデックス不要。
+**判断根拠**: 主要クエリは「メーカー絞り込み」と「排気量範囲フィルタ」の組み合わせ。
+それ以外のカラムでの検索はないため、インデックスはこの2本のみ。
+
+## データ投入フロー
+
+```
+scripts/scrape_maker.py --all-makers --csv data/bike_masters.csv
+          ↓
+  data/bike_masters.csv をコミット
+          ↓
+  alembic upgrade head（CI/CDで自動実行）
+          ↓
+  マイグレーションが CSV を読んで bulk_insert
+```
+
+### 対応メーカー（現在）
+
+| メーカー | 件数 |
+|---|---|
+| ホンダ | 392件 |
+| カワサキ | 306件 |
+| ヤマハ | 231件 |
+| スズキ | 164件 |
+| トライアンフ | 39件 |
+| **合計** | **1,132件** |
+
+> ハーレーダビッドソン・BMW・ドゥカティ・KTMはベルト/シャフト駆動モデルが多く、
+> バイクブロスのカタログでチェーン駆動として登録されているモデルが0件のため対象外。
+
+対象: 126cc以上のチェーン駆動モデル（ベルト・シャフト駆動は除外）
 
 ## マイグレーション戦略
 
-- **Alembic**でバージョン管理
-- 各マイグレーションは**1機能1ファイル**
-- 本番(Aurora)への適用はCI/CD経由のみ、手動で直接SQL実行はしない
-- ロールバックスクリプトは必ず書く(downgrade実装)
+- **Alembic** でバージョン管理
+- 各マイグレーションは **1機能1ファイル**
+- 本番（Aurora）への適用はCI/CD経由のみ、手動でSQL直接実行はしない
+- スキーマ変更とデータシードを同一マイグレーションファイルにまとめる方針
 
-## 初期データ投入
+## 制約事項
 
-```sql
--- MT-09 SP(2022-2024モデル純正想定値)
-INSERT INTO motorcycles (name, front_sprocket, rear_sprocket, chain_links, tire_circumference_mm)
-VALUES ('MT-09 SP', 16, 45, 118, 1992);
-```
-
-**注意**: 上記の数値は設計サンプル。実際にアプリ使用時は自分のバイクの実測値・
-整備手帳の値を入力すること。この初期データは動作確認用のSeedに留める。
-
-## 制約事項・既知の限界
-
-- **時刻のタイムゾーン**: `TIMESTAMP WITH TIME ZONE`で統一、アプリ側はUTC管理、表示時のみJST変換
-- **削除ポリシー**: 物理削除のみ(論理削除は実装しない、学習スコープ外)
-- **同時編集**: 楽観ロック未実装(単一ユーザー前提のため不要)
+- **重複管理**: `(maker, model_name)` の組み合わせで重複排除（upsert）
+- **削除ポリシー**: 物理削除のみ（論理削除は実装しない）
+- **書き込みAPI**: アプリからの直接書き込みエンドポイントなし（読み取り専用）
