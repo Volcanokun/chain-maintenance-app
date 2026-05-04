@@ -13,6 +13,7 @@ RUN uv sync --frozen --no-install-project --no-dev
 COPY app/ app/
 COPY alembic/ alembic/
 COPY alembic.ini ./
+COPY data/ data/
 RUN uv sync --frozen --no-dev
 
 # ============================================================
@@ -29,6 +30,7 @@ COPY --from=builder /build/.venv /app/.venv
 COPY --from=builder /build/app /app/app
 COPY --from=builder /build/alembic /app/alembic
 COPY --from=builder /build/alembic.ini /app/alembic.ini
+COPY --from=builder /build/data /app/data
 
 ENV PATH="/app/.venv/bin:$PATH"
 
