@@ -1,6 +1,6 @@
-# Chain Maintenance App
+# Bike Specs Lookup App (旧: Chain Maintenance App)
 
-バイクのチェーンメンテナンス記録Webアプリ。
+バイクのスペック情報（排気量・チェーン・スプロケット）を検索できるWebアプリ。
 **AWS上でRDS・HTTPS・Auto Scalingを実地検証するための学習プロジェクト**として構築。
 
 ## プロジェクトの目的
@@ -13,9 +13,11 @@
 - コスト意識(月5,000円以下の学習台)を設計に反映
 
 ## アーキテクチャ概要
-[User] → [Route53] → [ALB(HTTPS)] → [ECS Fargate(FastAPI)] → [Aurora Serverless v2]
-↓
-[VPC Endpoints: ECR, Secrets Manager, Logs, S3]
+```
+[User] → [Cloudflare DNS] → [ALB(HTTPS/443)] → [ECS Fargate(FastAPI)] → [Aurora Serverless v2]
+                                                          ↓
+                                         [VPC Endpoints: ECR, Secrets Manager, Logs, S3]
+```
 
 詳細は [docs/architecture.md](./docs/architecture.md) 参照。
 
@@ -31,38 +33,35 @@
 ## 技術スタック
 
 - **バックエンド**: Python 3.12 + FastAPI + SQLAlchemy 2.0 + Alembic
-- **フロントエンド**: HTML + Alpine.js(最小構成)
+- **フロントエンド**: HTML + Alpine.js + Tailwind CSS
+- **データ**: Bike Masters スクレイパー（排気量・チェーン・スプロケ情報）
 - **インフラ**: AWS ECS Fargate / Aurora Serverless v2 / ALB / VPC Endpoints
+- **DNS**: Cloudflare + ACM（chain-app.volcanokun.dev）
 - **IaC**: Terraform
-- **CI/CD**: GitHub Actions(OIDC認証)
+- **CI/CD**: GitHub Actions（OIDC認証、IAMアクセスキー不使用）
+- **パッケージ管理**: uv
 
 ## 開発フェーズ
 
 | Phase | 内容 | 状態 |
 |---|---|---|
-| 0 | 設計(要件・スキーマ・アーキ・コスト) | 完了 |
-| 1 | アプリ本体実装(ローカルSQLite動作) | 未着手 |
-| 2 | RDS統合(Aurora Serverless v2) | 未着手 |
-| 3 | HTTPS化(ACM + Route53) | 未着手 |
-| 4 | Auto Scaling + 負荷試験 | 未着手 |
+| 0 | 設計（要件・スキーマ・アーキ・コスト） | ✅ 完了 |
+| 1 | アプリ本体実装（FastAPI + SQLAlchemy、ローカルSQLite動作） | ✅ 完了 |
+| 2 | AWSインフラ構築（ECS Fargate + Aurora Serverless v2 + ALB + VPC Endpoint） | ✅ 完了 |
+| 3-A | HTTPS化（ACM + Cloudflare DNS）+ Auto Scaling + Locust負荷試験 | ✅ 完了 |
+| 3-B | アプリピボット（バイクスペック検索サービス）+ フロントエンド実装 | ✅ 完了 |
+| 3-B+ | 排気量フィルタ・UIリデザイン・Bike Mastersスクレイパー追加 | ✅ 完了 |
 
 ## セキュリティ対策
 
-- pre-commit hook (git-secrets) によるAWS認証情報の誤コミット防止
+- **gitleaks pre-commit hook**（`.pre-commit-config.yaml`）によるシークレット誤コミット防止
 - GitHub Dependabot alerts / security updates 有効化
 - `.gitignore`で`.env`, `*.pem`, `.terraform/`等を追跡除外
-- Branch protection rule(main直push禁止、PR必須)
-- Phase 2以降: AWS Secrets Manager、OIDC認証でIAMアクセスキー発行なし
-
-## 補足: 計算ロジック
-
-チェーン1周にかかるホイール回転数:
-回転数 = チェーンコマ数 / (リアスプロケ丁数 × 2)
-
-例) MT-09 SP(リアスプロケ45T、チェーン118L)の場合:
-`118 / (45 × 2) ≈ 1.31 回転`
-
-→ リアタイヤのエアバルブを基準に、**約1周と1/3 回したらチェーン1周**。
+- Branch protection rule（main直push禁止、PR必須）
+- AWS Secrets Manager でDB認証情報を管理（コードにハードコードなし）
+- GitHub Actions OIDC認証でIAMアクセスキー発行なし
+- ECS/GitHub ActionsのIAMロールは最小権限ポリシー
+- CloudTrail による API 操作ログ記録（90日保持）
 
 ## ライセンス
 
