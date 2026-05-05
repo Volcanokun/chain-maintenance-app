@@ -175,8 +175,9 @@ resource "aws_ecs_task_definition" "app" {
     },
     {
       # AWS X-Ray デーモン：アプリコンテナからトレースデータを UDP:2000 で受け取り X-Ray へ転送
+      # public.ecr.aws はプライベートサブネットから到達不可のため、プライベート ECR にミラーリング
       name      = "xray-daemon"
-      image     = "public.ecr.aws/xray/aws-xray-daemon:latest"
+      image     = "${aws_ecr_repository.xray_daemon.repository_url}:latest"
       essential = false
 
       portMappings = [
