@@ -43,6 +43,7 @@
 │  │         ┌─────────────────────────────────────┐              │   │
 │  │         │  ECS Fargate Service                │              │   │
 │  │         │  - FastAPI コンテナ                 │              │   │
+│  │         │  - xray-daemon サイドカー           │              │   │
 │  │         │  - タスク数: 1〜4（Auto Scaling）   │              │   │
 │  │         │  - CPU: 0.25 vCPU / Memory: 0.5 GB  │              │   │
 │  │         └────┬──────────────────────┬──────────┘              │   │
@@ -259,7 +260,7 @@ postgresql+psycopg2://user:pass@host:5432/dbname?sslmode=require
 | 監査ログ | CloudTrail → S3、90日保持、ログ改ざん検知あり |
 | メトリクス | CloudWatch標準（ECS CPU・ALB 4xx/5xx・Aurora ACU） |
 | コストアラート | 月$20（約3,000円）・月$53（約8,000円）でメール通知 |
-| 分散トレーシング | 未実装（X-Rayは学習スコープ外） |
+| 分散トレーシング | X-Ray（xray-daemon サイドカー + aws-xray-sdk）|
 
 ## 障害対応設計
 

@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "aiofiles>=24.1.0",
     "alembic>=1.18.4",
+    "aws-xray-sdk>=2.14.0",
     "fastapi>=0.136.0",
     "psycopg2-binary>=2.9.12",
     "pydantic>=2.13.2",

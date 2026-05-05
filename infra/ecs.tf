@@ -79,6 +79,27 @@ resource "aws_iam_role_policy" "ecs_task_secrets" {
   })
 }
 
+# X-Ray へのトレースデータ送信権限（xray-daemon サイドカーが使用）
+# X-Ray はリソースレベル ARN 指定が非対応のため Resource = "*" が必須
+resource "aws_iam_role_policy" "ecs_task_xray" {
+  name = "xray-put-traces"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "xray:PutTraceSegments",
+        "xray:PutTelemetryRecords",
+        "xray:GetSamplingRules",
+        "xray:GetSamplingTargets",
+      ]
+      Resource = ["*"]
+    }]
+  })
+}
+
 # ── ECS クラスター ────────────────────────────────────────────────────────────
 
 resource "aws_ecs_cluster" "main" {
@@ -116,6 +137,10 @@ resource "aws_ecs_task_definition" "app" {
         }
       ]
 
+      environment = [
+        { name = "XRAY_ENABLED", value = "true" }
+      ]
+
       # DB 接続情報を Secrets Manager から個別キーで注入
       secrets = [
         { name = "DB_HOST",     valueFrom = "${aws_secretsmanager_secret.db.arn}:host::" },
@@ -141,6 +166,33 @@ resource "aws_ecs_task_definition" "app" {
         timeout     = 5
         retries     = 3
         startPeriod = 30
+      }
+
+      # xray-daemon が先に起動してからアプリを起動する
+      dependsOn = [
+        { containerName = "xray-daemon", condition = "START" }
+      ]
+    },
+    {
+      # AWS X-Ray デーモン：アプリコンテナからトレースデータを UDP:2000 で受け取り X-Ray へ転送
+      name      = "xray-daemon"
+      image     = "public.ecr.aws/xray/aws-xray-daemon:latest"
+      essential = false
+
+      portMappings = [
+        {
+          containerPort = 2000
+          protocol      = "udp"
+        }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.ecs.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "xray"
+        }
       }
     }
   ])
