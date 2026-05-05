@@ -136,12 +136,14 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = "${aws_cloudwatch_log_group.ecs.arn}:*"
       },
 
-      # CodeDeploy: デプロイ作成・リビジョン登録（アプリ・デプロイグループ限定）
+      # CodeDeploy: デプロイ作成・状態確認・リビジョン登録
+      # GetDeployment は deploymentgroup ARN をリソースに要求する（deployment ARN ではない）
       {
         Sid    = "CodeDeployApp"
         Effect = "Allow"
         Action = [
           "codedeploy:CreateDeployment",
+          "codedeploy:GetDeployment",
           "codedeploy:RegisterApplicationRevision",
           "codedeploy:GetApplicationRevision",
         ]
@@ -151,16 +153,12 @@ resource "aws_iam_role_policy" "github_actions" {
         ]
       },
 
-      # CodeDeploy: デプロイ状態確認（デプロイ ID は動的のため account スコープで制限）
+      # CodeDeploy: デプロイ設定取得（deploymentconfig ARN が対象）
       {
-        Sid    = "CodeDeployStatus"
+        Sid    = "CodeDeployConfig"
         Effect = "Allow"
-        Action = [
-          "codedeploy:GetDeployment",
-          "codedeploy:GetDeploymentConfig",
-        ]
+        Action = ["codedeploy:GetDeploymentConfig"]
         Resource = [
-          "arn:aws:codedeploy:${var.aws_region}:${data.aws_caller_identity.current.account_id}:deployment:*",
           "arn:aws:codedeploy:${var.aws_region}:${data.aws_caller_identity.current.account_id}:deploymentconfig:*",
         ]
       },
