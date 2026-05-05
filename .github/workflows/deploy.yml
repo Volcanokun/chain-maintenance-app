@@ -81,6 +81,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Mirror xray-daemon to private ECR
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          # public.ecr.aws はプライベートサブネットから到達不可のため、事前にミラーリング
+          # GitHub Actions ランナーはインターネットアクセスがあるので pull 可能
+          docker pull --platform linux/amd64 public.ecr.aws/xray/aws-xray-daemon:latest
+          docker tag public.ecr.aws/xray/aws-xray-daemon:latest \
+            $REGISTRY/chain-maintenance-xray-daemon:latest
+          docker push $REGISTRY/chain-maintenance-xray-daemon:latest
+
       - name: Build and push image
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}

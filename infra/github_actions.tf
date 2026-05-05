@@ -72,7 +72,7 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = "*"
       },
 
-      # ECR イメージプッシュ（リポジトリ限定）
+      # ECR イメージプッシュ（アプリ + xray-daemon ミラーリポジトリ）
       {
         Sid    = "ECRPush"
         Effect = "Allow"
@@ -85,7 +85,10 @@ resource "aws_iam_role_policy" "github_actions" {
           "ecr:CompleteLayerUpload",
           "ecr:PutImage",
         ]
-        Resource = aws_ecr_repository.app.arn
+        Resource = [
+          aws_ecr_repository.app.arn,
+          aws_ecr_repository.xray_daemon.arn,
+        ]
       },
 
       # ECS サービス情報取得・タスク定義登録・マイグレーションタスク実行
