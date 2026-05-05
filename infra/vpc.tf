@@ -137,6 +137,17 @@ resource "aws_security_group_rule" "alb_ingress_http" {
   cidr_blocks       = ["0.0.0.0/0"]
 }
 
+# CodeDeploy Blue/Green テストリスナー（Green タスクの動作確認用）
+resource "aws_security_group_rule" "alb_ingress_test" {
+  security_group_id = aws_security_group.alb.id
+  type              = "ingress"
+  description       = "Test listener for CodeDeploy Blue/Green validation"
+  from_port         = 8080
+  to_port           = 8080
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+}
+
 # ALB outbound → ECS
 resource "aws_security_group_rule" "alb_egress_ecs" {
   security_group_id        = aws_security_group.alb.id
@@ -272,4 +283,16 @@ resource "aws_vpc_endpoint" "logs" {
   private_dns_enabled = true
 
   tags = { Name = "${local.name_prefix}-vpce-logs" }
+}
+
+# X-Ray (xray-daemon サイドカーがトレースデータを送信)
+resource "aws_vpc_endpoint" "xray" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.xray"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = aws_subnet.private[*].id
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = { Name = "${local.name_prefix}-vpce-xray" }
 }

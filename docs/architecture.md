@@ -204,9 +204,14 @@
         ↓
 [Alembic Migration] (ECS Run Task)
         ↓
-[ECS Service Update] (force-new-deployment)
+[CodeDeploy Blue/Green]
+  - AppSpec JSON を動的生成
+  - aws deploy create-deployment
+  - Green タスク起動 → テストリスナー(8080)で確認
+  - 本番リスナー(443)を Blue→Green に切替
+  - 5分後に Blue タスクを終了
         ↓
-[Health Check待機] (services-stable)
+[aws deploy wait deployment-successful]
 ```
 
 **ポイント**: Migration → Deploy の順序を守る。逆にすると新コードが古いスキーマを叩いて落ちる。

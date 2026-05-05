@@ -127,3 +127,15 @@ output "github_actions_role_arn" {
   description = "GitHub Actions が AssumeRole する IAM ロール ARN（GitHub Secret: AWS_ROLE_ARN に設定する）"
   value       = aws_iam_role.github_actions.arn
 }
+
+# ── CodeDeploy ────────────────────────────────────────────────────────────────
+
+output "codedeploy_app_name" {
+  description = "CodeDeploy アプリケーション名（deploy.yml の CODEDEPLOY_APP に設定する）"
+  value       = aws_codedeploy_app.ecs.name
+}
+
+output "codedeploy_deployment_group_name" {
+  description = "CodeDeploy デプロイグループ名（deploy.yml の CODEDEPLOY_GROUP に設定する）"
+  value       = aws_codedeploy_deployment_group.ecs.deployment_group_name
+}

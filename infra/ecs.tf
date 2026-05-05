@@ -209,6 +209,12 @@ resource "aws_ecs_service" "app" {
   desired_count   = 1
   launch_type     = "FARGATE"
 
+  # CodeDeploy が Blue/Green 切替を管理する（ECS ローリングアップデートを無効化）
+  # 注意: deployment_controller の変更は ECS サービスの再作成が必要（一時的なダウンタイムあり）
+  deployment_controller {
+    type = "CODE_DEPLOY"
+  }
+
   network_configuration {
     subnets          = aws_subnet.private[*].id
     security_groups  = [aws_security_group.ecs.id]
@@ -224,8 +230,8 @@ resource "aws_ecs_service" "app" {
   health_check_grace_period_seconds = 60
 
   lifecycle {
-    # CI/CD がタスク定義・スケール数を更新するため Terraform の上書きを防ぐ
-    ignore_changes = [desired_count, task_definition]
+    # CodeDeploy がタスク定義・スケール数・ロードバランサを管理するため Terraform の上書きを防ぐ
+    ignore_changes = [desired_count, task_definition, load_balancer]
   }
 
   depends_on = [aws_lb_listener.http]

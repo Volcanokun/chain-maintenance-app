@@ -114,14 +114,6 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task-definition/${local.name_prefix}-app:*"
       },
 
-      # ECS サービス更新（force-new-deployment）
-      {
-        Sid    = "ECSUpdateService"
-        Effect = "Allow"
-        Action = ["ecs:UpdateService"]
-        Resource = "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:service/${aws_ecs_cluster.main.name}/${aws_ecs_service.app.name}"
-      },
-
       # ECS RunTask 時に実行ロール・タスクロールを渡すために必要
       {
         Sid    = "PassRoleToECS"
@@ -139,6 +131,35 @@ resource "aws_iam_role_policy" "github_actions" {
         Effect   = "Allow"
         Action   = ["logs:GetLogEvents", "logs:DescribeLogStreams"]
         Resource = "${aws_cloudwatch_log_group.ecs.arn}:*"
+      },
+
+      # CodeDeploy: デプロイ作成・リビジョン登録（アプリ・デプロイグループ限定）
+      {
+        Sid    = "CodeDeployApp"
+        Effect = "Allow"
+        Action = [
+          "codedeploy:CreateDeployment",
+          "codedeploy:RegisterApplicationRevision",
+          "codedeploy:GetApplicationRevision",
+        ]
+        Resource = [
+          aws_codedeploy_app.ecs.arn,
+          aws_codedeploy_deployment_group.ecs.arn,
+        ]
+      },
+
+      # CodeDeploy: デプロイ状態確認（デプロイ ID は動的のため account スコープで制限）
+      {
+        Sid    = "CodeDeployStatus"
+        Effect = "Allow"
+        Action = [
+          "codedeploy:GetDeployment",
+          "codedeploy:GetDeploymentConfig",
+        ]
+        Resource = [
+          "arn:aws:codedeploy:${var.aws_region}:${data.aws_caller_identity.current.account_id}:deployment:*",
+          "arn:aws:codedeploy:${var.aws_region}:${data.aws_caller_identity.current.account_id}:deploymentconfig:*",
+        ]
       },
     ]
   })
