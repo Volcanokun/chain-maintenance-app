@@ -12,6 +12,8 @@ env:
   ECS_SERVICE: chain-maintenance-prod-service
   TASK_FAMILY: chain-maintenance-prod-app
   CONTAINER_NAME: app
+  CODEDEPLOY_APP: chain-maintenance-prod-deploy-app
+  CODEDEPLOY_GROUP: chain-maintenance-prod-deploy-group
 
 # 同時デプロイを防止（新しい run はキューイング）
 concurrency:
@@ -182,10 +184,13 @@ jobs:
           echo "Migration completed successfully"
 
   # ────────────────────────────────────────────────────────────
-  # 4. ECS サービス更新 & ヘルスチェック待機
+  # 4. CodeDeploy Blue/Green デプロイ
+  # AppSpec JSON を動的生成 → CodeDeploy にデプロイ作成を依頼。
+  # CodeDeploy が Green タスクを起動 → テストリスナー(8080)で確認 →
+  # 本番リスナー(443)を Blue→Green に切替 → 5分後に Blue タスクを終了。
   # ────────────────────────────────────────────────────────────
   deploy:
-    name: Deploy & Health Check
+    name: Blue/Green Deploy via CodeDeploy
     needs: [build, migrate]
     runs-on: ubuntu-latest
 
@@ -196,22 +201,63 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Update ECS service with new task definition
+      - name: Create CodeDeploy deployment
+        id: create-deployment
         run: |
-          aws ecs update-service \
-            --cluster "$ECS_CLUSTER" \
-            --service  "$ECS_SERVICE" \
-            --task-definition "${{ needs.build.outputs.task-def-arn }}" \
-            --force-new-deployment \
-            --query 'service.serviceName' \
-            --output text
-          echo "Triggered deployment for: $ECS_SERVICE"
+          TASK_DEF_ARN="${{ needs.build.outputs.task-def-arn }}"
 
-      - name: Wait for service to stabilize (health check)
+          # AppSpec JSON を構築（ECS Blue/Green 用フォーマット）
+          APPSPEC=$(jq -cn \
+            --arg task_def "$TASK_DEF_ARN" \
+            '{
+              version: 0.0,
+              Resources: [{
+                TargetService: {
+                  Type: "AWS::ECS::Service",
+                  Properties: {
+                    TaskDefinition: $task_def,
+                    LoadBalancerInfo: {
+                      ContainerName: "app",
+                      ContainerPort: 8000
+                    }
+                  }
+                }
+              }]
+            }')
+
+          APPSPEC_SHA=$(printf '%s' "$APPSPEC" | sha256sum | awk '{print $1}')
+
+          # create-deployment 入力 JSON を構築（jq で特殊文字を安全にエスケープ）
+          jq -n \
+            --arg app     "$CODEDEPLOY_APP" \
+            --arg grp     "$CODEDEPLOY_GROUP" \
+            --arg desc    "Deploy $GITHUB_SHA" \
+            --arg content "$APPSPEC" \
+            --arg sha     "$APPSPEC_SHA" \
+            '{
+              applicationName:     $app,
+              deploymentGroupName: $grp,
+              description:         $desc,
+              revision: {
+                revisionType: "AppSpecContent",
+                appSpecContent: {
+                  content: $content,
+                  sha256:  $sha
+                }
+              }
+            }' > /tmp/deploy-input.json
+
+          DEPLOYMENT_ID=$(aws deploy create-deployment \
+            --cli-input-json file:///tmp/deploy-input.json \
+            --query 'deploymentId' --output text)
+
+          echo "Deployment ID: $DEPLOYMENT_ID"
+          echo "deployment-id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for deployment to succeed
         run: |
-          echo "Waiting for ECS service to stabilize..."
-          # ALB ヘルスチェックが通り全タスクが RUNNING になるまで最大 10 分待機
-          aws ecs wait services-stable \
-            --cluster "$ECS_CLUSTER" \
-            --services "$ECS_SERVICE"
-          echo "Deployment complete and healthy!"
+          DEPLOYMENT_ID="${{ steps.create-deployment.outputs.deployment-id }}"
+          echo "Waiting for deployment: $DEPLOYMENT_ID"
+          # aws deploy wait は最大 30 分（15s × 120 回）ポーリング
+          aws deploy wait deployment-successful --deployment-id "$DEPLOYMENT_ID"
+          echo "Blue/Green deployment completed successfully!"

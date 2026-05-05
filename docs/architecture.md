@@ -43,6 +43,7 @@
 │  │         ┌─────────────────────────────────────┐              │   │
 │  │         │  ECS Fargate Service                │              │   │
 │  │         │  - FastAPI コンテナ                 │              │   │
+│  │         │  - xray-daemon サイドカー           │              │   │
 │  │         │  - タスク数: 1〜4（Auto Scaling）   │              │   │
 │  │         │  - CPU: 0.25 vCPU / Memory: 0.5 GB  │              │   │
 │  │         └────┬──────────────────────┬──────────┘              │   │
@@ -203,9 +204,14 @@
         ↓
 [Alembic Migration] (ECS Run Task)
         ↓
-[ECS Service Update] (force-new-deployment)
+[CodeDeploy Blue/Green]
+  - AppSpec JSON を動的生成
+  - aws deploy create-deployment
+  - Green タスク起動 → テストリスナー(8080)で確認
+  - 本番リスナー(443)を Blue→Green に切替
+  - 5分後に Blue タスクを終了
         ↓
-[Health Check待機] (services-stable)
+[aws deploy wait deployment-successful]
 ```
 
 **ポイント**: Migration → Deploy の順序を守る。逆にすると新コードが古いスキーマを叩いて落ちる。
@@ -259,7 +265,7 @@ postgresql+psycopg2://user:pass@host:5432/dbname?sslmode=require
 | 監査ログ | CloudTrail → S3、90日保持、ログ改ざん検知あり |
 | メトリクス | CloudWatch標準（ECS CPU・ALB 4xx/5xx・Aurora ACU） |
 | コストアラート | 月$20（約3,000円）・月$53（約8,000円）でメール通知 |
-| 分散トレーシング | 未実装（X-Rayは学習スコープ外） |
+| 分散トレーシング | X-Ray（xray-daemon サイドカー + aws-xray-sdk）|
 
 ## 障害対応設計
 

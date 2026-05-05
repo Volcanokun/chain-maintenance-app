@@ -79,6 +79,27 @@ resource "aws_iam_role_policy" "ecs_task_secrets" {
   })
 }
 
+# X-Ray へのトレースデータ送信権限（xray-daemon サイドカーが使用）
+# X-Ray はリソースレベル ARN 指定が非対応のため Resource = "*" が必須
+resource "aws_iam_role_policy" "ecs_task_xray" {
+  name = "xray-put-traces"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "xray:PutTraceSegments",
+        "xray:PutTelemetryRecords",
+        "xray:GetSamplingRules",
+        "xray:GetSamplingTargets",
+      ]
+      Resource = ["*"]
+    }]
+  })
+}
+
 # ── ECS クラスター ────────────────────────────────────────────────────────────
 
 resource "aws_ecs_cluster" "main" {
@@ -116,6 +137,10 @@ resource "aws_ecs_task_definition" "app" {
         }
       ]
 
+      environment = [
+        { name = "XRAY_ENABLED", value = "true" }
+      ]
+
       # DB 接続情報を Secrets Manager から個別キーで注入
       secrets = [
         { name = "DB_HOST",     valueFrom = "${aws_secretsmanager_secret.db.arn}:host::" },
@@ -142,6 +167,33 @@ resource "aws_ecs_task_definition" "app" {
         retries     = 3
         startPeriod = 30
       }
+
+      # xray-daemon が先に起動してからアプリを起動する
+      dependsOn = [
+        { containerName = "xray-daemon", condition = "START" }
+      ]
+    },
+    {
+      # AWS X-Ray デーモン：アプリコンテナからトレースデータを UDP:2000 で受け取り X-Ray へ転送
+      name      = "xray-daemon"
+      image     = "public.ecr.aws/xray/aws-xray-daemon:latest"
+      essential = false
+
+      portMappings = [
+        {
+          containerPort = 2000
+          protocol      = "udp"
+        }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.ecs.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "xray"
+        }
+      }
     }
   ])
 
@@ -156,6 +208,12 @@ resource "aws_ecs_service" "app" {
   task_definition = aws_ecs_task_definition.app.arn
   desired_count   = 1
   launch_type     = "FARGATE"
+
+  # CodeDeploy が Blue/Green 切替を管理する（ECS ローリングアップデートを無効化）
+  # 注意: deployment_controller の変更は ECS サービスの再作成が必要（一時的なダウンタイムあり）
+  deployment_controller {
+    type = "CODE_DEPLOY"
+  }
 
   network_configuration {
     subnets          = aws_subnet.private[*].id
@@ -172,8 +230,8 @@ resource "aws_ecs_service" "app" {
   health_check_grace_period_seconds = 60
 
   lifecycle {
-    # CI/CD がタスク定義・スケール数を更新するため Terraform の上書きを防ぐ
-    ignore_changes = [desired_count, task_definition]
+    # CodeDeploy がタスク定義・スケール数・ロードバランサを管理するため Terraform の上書きを防ぐ
+    ignore_changes = [desired_count, task_definition, load_balancer]
   }
 
   depends_on = [aws_lb_listener.http]

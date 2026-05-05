@@ -25,12 +25,12 @@ CSV_PATH = Path(__file__).parents[2] / "data" / "bike_masters.csv"
 
 
 def upgrade() -> None:
-    # (maker, model_name) にユニーク制約を追加（ON CONFLICT で upsert するために必要）
-    op.create_unique_constraint(
-        "uq_bike_masters_maker_model",
-        "bike_masters",
-        ["maker", "model_name"],
-    )
+    # SQLite は ALTER TABLE ADD CONSTRAINT を非対応のため batch モードで実行
+    with op.batch_alter_table("bike_masters") as batch_op:
+        batch_op.create_unique_constraint(
+            "uq_bike_masters_maker_model",
+            ["maker", "model_name"],
+        )
 
     conn = op.get_bind()
 
@@ -38,6 +38,7 @@ def upgrade() -> None:
         rows = list(csv.DictReader(f))
 
     for row in rows:
+        # ON CONFLICT(col, col) 構文は SQLite 3.24+ / PostgreSQL 両対応
         conn.execute(
             sa.text("""
                 INSERT INTO bike_masters
@@ -48,7 +49,7 @@ def upgrade() -> None:
                     (:maker, :model_name, :displacement_cc,
                      :front_sprocket, :rear_sprocket, :chain_links,
                      :chain_pitch, :rear_tire_size)
-                ON CONFLICT ON CONSTRAINT uq_bike_masters_maker_model DO UPDATE SET
+                ON CONFLICT(maker, model_name) DO UPDATE SET
                     displacement_cc = EXCLUDED.displacement_cc,
                     front_sprocket  = EXCLUDED.front_sprocket,
                     rear_sprocket   = EXCLUDED.rear_sprocket,
@@ -70,5 +71,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint("uq_bike_masters_maker_model", "bike_masters", type_="unique")
+    with op.batch_alter_table("bike_masters") as batch_op:
+        batch_op.drop_constraint("uq_bike_masters_maker_model", type_="unique")
     op.execute(sa.text("DELETE FROM bike_masters WHERE maker != 'ホンダ'"))
