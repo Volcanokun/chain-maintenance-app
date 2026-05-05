@@ -141,6 +141,6 @@ output "codedeploy_deployment_group_name" {
 }
 
 output "https_listener_arn" {
-  description = "HTTPS リスナー ARN（data source で自動取得、参照用）"
-  value       = data.aws_lb_listener.https.arn
+  description = "HTTPS リスナー ARN（dns.tf の aws_lb_listener.https から参照）"
+  value       = aws_lb_listener.https.arn
 }
