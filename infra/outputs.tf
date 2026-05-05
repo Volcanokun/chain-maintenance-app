@@ -131,11 +131,16 @@ output "github_actions_role_arn" {
 # ── CodeDeploy ────────────────────────────────────────────────────────────────
 
 output "codedeploy_app_name" {
-  description = "CodeDeploy アプリケーション名（deploy.yml の CODEDEPLOY_APP に設定する）"
+  description = "CodeDeploy アプリケーション名（deploy.yml の CODEDEPLOY_APP と一致していること）"
   value       = aws_codedeploy_app.ecs.name
 }
 
 output "codedeploy_deployment_group_name" {
-  description = "CodeDeploy デプロイグループ名（deploy.yml の CODEDEPLOY_GROUP に設定する）"
+  description = "CodeDeploy デプロイグループ名（deploy.yml の CODEDEPLOY_GROUP と一致していること）"
   value       = aws_codedeploy_deployment_group.ecs.deployment_group_name
+}
+
+output "https_listener_arn" {
+  description = "HTTPS リスナー ARN（data source で自動取得、参照用）"
+  value       = data.aws_lb_listener.https.arn
 }

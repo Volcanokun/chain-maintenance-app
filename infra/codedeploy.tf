@@ -1,3 +1,14 @@
+# ── HTTPS リスナー参照（dns.tf が作成するリスナーを port で自動検索）─────────
+# dns.tf は git 管理外のためリソース名を直接参照できない。
+# data source で ALB + port 443 を条件に引くことで tfvars への手動記載を不要にする。
+data "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = 443
+
+  # ALB が存在してから読む（初回 apply 時に ALB 作成 → リスナー作成 → data source 参照の順を保証）
+  depends_on = [aws_lb.main]
+}
+
 # ── CodeDeploy IAM Role ───────────────────────────────────────────────────────
 
 data "aws_iam_policy_document" "codedeploy_assume" {
@@ -57,7 +68,7 @@ resource "aws_codedeploy_deployment_group" "ecs" {
     target_group_pair_info {
       # 本番リスナー（HTTPS 443）: CodeDeploy がトラフィックを Blue↔Green で切替
       prod_traffic_route {
-        listener_arns = [var.https_listener_arn]
+        listener_arns = [data.aws_lb_listener.https.arn]
       }
       # テストリスナー（HTTP 8080）: 切替前に Green タスクを手動・自動検証する口
       test_traffic_route {

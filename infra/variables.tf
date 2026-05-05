@@ -52,8 +52,3 @@ variable "cloudflare_api_token" {
   type        = string
   sensitive   = true
 }
-
-variable "https_listener_arn" {
-  description = "HTTPS リスナー ARN（dns.tf で作成した ALB:443 リスナー。tfvars に記載）"
-  type        = string
-}
