@@ -17,16 +17,26 @@ app = FastAPI(
 
 # ECS 環境でのみ X-Ray を有効化（XRAY_ENABLED=true が必要）
 if os.getenv("XRAY_ENABLED", "false").lower() == "true":
+    import asyncio
+
     from aws_xray_sdk.core import xray_recorder
     from aws_xray_sdk.core.async_context import AsyncContext
+    from aws_xray_sdk.core.async_context import task_factory as _xray_task_factory
     from starlette.middleware.base import BaseHTTPMiddleware
     from starlette.requests import Request
+
+    # aws_xray_sdk の task_factory は Python 3.12 / uvloop が渡す context kwarg 未対応のためラップ
+    def _patched_task_factory(loop, coro, *, context=None):
+        return _xray_task_factory(loop, coro)
+
+    _ctx = AsyncContext(use_task_factory=False)
+    asyncio.get_event_loop().set_task_factory(_patched_task_factory)
 
     xray_recorder.configure(
         service="chain-maintenance-app",
         daemon_address="127.0.0.1:2000",
         context_missing="LOG_ERROR",
-        context=AsyncContext(),
+        context=_ctx,
     )
 
     class XRayMiddleware(BaseHTTPMiddleware):
